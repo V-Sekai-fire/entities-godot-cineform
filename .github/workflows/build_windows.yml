@@ -1,0 +1,106 @@
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+#
+# ONE PLATFORM ON PURPOSE.
+#
+# godot-whisper builds nine platform and architecture pairs from a matrix, times two float
+# precisions, through a shared action. That is a good end state and a bad starting point. A
+# nine way matrix that has never gone green once fails in nine places at the same time, and
+# none of the failures can be told apart from the others.
+#
+# So this builds Windows x86_64, which is the desk the code was written on. Every later
+# platform is a rung added to a ladder that already holds weight.
+#
+# The rungs after this one, in the order they should be added:
+#   linux x86_64     the pods run it, and it proves the code is not MSVC shaped
+#   macos universal  needs signing secrets, so it arrives with its own paperwork
+#   android, ios     only if something ships to a handset
+#   web wasm32       CineForm has no SIMD path there and would need measuring first
+
+name: build windows
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  gate:
+    # The checks that need no compiler run first and cost seconds. A build that takes ten
+    # minutes to tell us a hash moved is ten minutes spent learning nothing.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install check dependencies
+        run: python -m pip install numpy
+
+      - name: GDExtension symbols still agree across Godot 4.0 to 4.5
+        # Fails if a Godot release changes a signature we bind. That is the claim the single
+        # binary rests on, so it is a gate and not a comment.
+        run: python gen_bindings.py --check
+
+      - name: Generated header is committed and current
+        run: |
+          python gen_bindings.py
+          git diff --exit-code -- src/gdextension_symbols.h
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: CineForm round trip, with its negative control
+        run: python verify_roundtrip.py
+
+  build:
+    needs: [gate]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch pinned dependencies
+        shell: bash
+        run: ./fetch_deps.sh
+
+      - name: Record what was pinned
+        shell: bash
+        run: cat thirdparty/PINNED.txt
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        shell: cmd
+        # CMAKE_POLICY_VERSION_MINIMUM because cineform-sdk asks for CMake 3.5.1 and CMake 4
+        # refuses anything below 3.10 without it. The alternative is patching a vendored
+        # dependency, which makes every future update a merge.
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+      - name: Build
+        shell: cmd
+        run: cmake --build build --parallel
+
+      - name: The library exists under the name cineform.gdextension expects
+        shell: bash
+        # A build that produces a file under the wrong name is a build Godot reports as
+        # "extension not found", with no hint about which name it wanted.
+        run: |
+          want=demo/addons/cineform/bin/libgodot_cineform.windows.template_release.x86_64.dll
+          ls -l demo/addons/cineform/bin/ || true
+          test -f "$want" || { echo "missing $want"; exit 1; }
+          echo "ok $want"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: godot-cineform-windows-x86_64
+          path: |
+            demo/addons/cineform/**
+            thirdparty/PINNED.txt
+          if-no-files-found: error

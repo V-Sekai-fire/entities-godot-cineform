@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  godot-cineform's own manifest. This repository is a `repo` manifest ROOT.
+
+  WHY IT CARRIES ITS OWN MANIFEST RATHER THAN LEANING ON THE WORKSPACE ONE.
+  This project needs two dependencies and nothing else does. Putting them in
+  `weftspun/weftspun`'s default.xml made every checkout of the workspace fetch a C++ binding
+  library and a video codec, whether or not anyone intended to build a GDExtension. It also
+  placed them as siblings, where their relationship to this project was a comment rather than
+  a path.
+
+  Fetched HERE, into thirdparty/, the arrangement says what it is: these belong to this build.
+
+  This manifest is STANDALONE. It includes no other manifest and is included by none, so a
+  clone of this repository is enough to build it.
+
+    repo init -u https://github.com/weftspun/godot-cineform -m default.xml
+    repo sync
+
+  NOT SUBMODULES, and CLAUDE.md blocklists those. A submodule pins a dependency in a file only
+  git reads. `repo status` cannot see it, and a bump appears in a diff as a bare hash with no
+  name, no branch and no reason. A manifest entry carries all three, plus room for the comment
+  explaining the pin, which is what the entries below use.
+-->
+<manifest>
+  <remote name="weftspun" fetch="https://github.com/weftspun" />
+  <default remote="weftspun" sync-j="4" />
+
+  <!-- Forked from godotengine/godot-cpp. Forked rather than pinned upstream because a
+       `revision` on somebody else's repository is a promise they have not made.
+
+       The commit is godot-whisper's, exactly. That project builds nine platform and
+       architecture pairs from this tree, so any platform failure here is ours rather than a
+       question about the binding library. It is branch 4.2, which sets the engine floor.
+
+       Measured, not assumed: every method hash this extension binds is identical in Godot 4.0
+       through 4.5, and gen_bindings.py fails the build if that stops being true. So 4.2 is a
+       choice about which tree to trust, not a limit anyone found. -->
+  <project name="godot-cpp" path="thirdparty/godot-cpp"
+           revision="4bc6e67d51df4c12e150fe4769911e239c627a47" />
+
+  <!-- Forked from gopro/cineform-sdk, for the same reason. Dual licensed
+       `Apache-2.0 OR MIT`, which is this workspace's own pair, so nothing new enters an
+       export. That licence is the reason this project exists rather than linking FFmpeg,
+       which is LGPL and would follow every Godot export forever. RFD 0123 has the argument. -->
+  <project name="cineform-sdk" path="thirdparty/cineform-sdk"
+           revision="11574d0295771edccadd17af14af74a539f924c7" />
+</manifest>

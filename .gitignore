@@ -1,0 +1,6 @@
+thirdparty/
+build/
+build-*/
+demo/addons/cineform/bin/
+.godot/
+*.avi
