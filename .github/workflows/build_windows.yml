@@ -61,13 +61,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch pinned dependencies
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install repo
         shell: bash
-        run: ./fetch_deps.sh
+        # `repo` is a single Python script. Installing it by hand rather than through a
+        # marketplace action keeps the dependency list of this workflow to things we can name.
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/repo" https://storage.googleapis.com/git-repo-downloads/repo
+          chmod +x "$RUNNER_TEMP/repo"
+
+      - name: Fetch dependencies from this repository's own manifest
+        shell: bash
+        # default.xml is the single source of truth for what version of godot-cpp and
+        # cineform-sdk this builds against. Running repo here means CI reads the same file a
+        # developer does, so the two cannot drift.
+        #
+        # repo needs an identity before it will init, and a runner has none.
+        run: |
+          git config --global user.email "ci@weftspun.invalid"
+          git config --global user.name "weftspun ci"
+          git config --global color.ui false
+          python "$RUNNER_TEMP/repo" init -u https://github.com/weftspun/godot-cineform -b main -m default.xml --depth=1
+          python "$RUNNER_TEMP/repo" sync -j4
 
       - name: Record what was pinned
         shell: bash
-        run: cat thirdparty/PINNED.txt
+        # The manifest names a revision. This prints the commit actually checked out, so a
+        # green build says which trees produced it.
+        run: |
+          for d in thirdparty/godot-cpp thirdparty/cineform-sdk; do
+            echo "$d $(git -C "$d" rev-parse HEAD)"
+          done
 
       - uses: ilammy/msvc-dev-cmd@v1
         with:

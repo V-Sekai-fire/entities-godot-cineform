@@ -4,3 +4,4 @@ build-*/
 demo/addons/cineform/bin/
 .godot/
 *.avi
+.repo/
