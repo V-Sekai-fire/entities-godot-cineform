@@ -12,15 +12,23 @@ extends Node2D
 # motion at once, which is roughly what a real capture contains. An honest file size needs an
 # honest picture.
 
-const W := 1920.0
-const H := 1080.0
+# RETRACTED: these were constants at 1920 by 1080. Rendering at 3840 by 2160 then drew the
+# whole scene into the top left quarter and left the rest black, which is not a stretched
+# picture, it is a wrong one. The viewport is the authority on its own size.
 const BARS := 64
+
+var W := 1920.0
+var H := 1080.0
 
 var t := 0.0
 var frames := 0
 
 
 func _ready() -> void:
+	var vp := get_viewport_rect().size
+	W = vp.x
+	H = vp.y
+	print("ok   scene follows the viewport at %dx%d" % [int(W), int(H)])
 	if not ClassDB.class_exists("MovieWriterCineForm"):
 		printerr("FAIL MovieWriterCineForm did not register")
 		get_tree().quit(1)
