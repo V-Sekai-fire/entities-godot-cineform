@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+#
+# Called by runner.yml after the platform matrix has merged into one artifact. Not triggered
+# on its own, because a release built from anything other than a completed matrix would be a
+# partial addon that still installs.
+
+name: release
+
+on:
+  workflow_call:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the merged addon
+        uses: actions/download-artifact@v4
+        with:
+          name: godot-cineform
+          path: godot-cineform/addons/cineform
+
+      - name: Refuse to release an addon missing a platform
+        # The matrix does not fail fast, so one platform can fail while the rest go green and
+        # the merge still produces an artifact. Without this check that partial addon ships,
+        # and it installs cleanly and then does nothing on the missing platform.
+        run: |
+          cd godot-cineform/addons/cineform
+          missing=0
+          for f in \
+            bin/libgodot_cineform.windows.template_release.x86_64.dll \
+            bin/libgodot_cineform.windows.template_debug.x86_64.dll \
+            bin/libgodot_cineform.linux.template_release.x86_64.so \
+            bin/libgodot_cineform.linux.template_debug.x86_64.so \
+            bin/libgodot_cineform.macos.template_release.x86_64.dylib \
+            bin/libgodot_cineform.macos.template_debug.x86_64.dylib \
+            cineform.gdextension plugin.cfg LICENSE-APACHE LICENSE-MIT
+          do
+            if [ ! -f "$f" ]; then echo "MISSING $f"; missing=1; fi
+          done
+          [ "$missing" = "0" ] || { echo "refusing to publish an incomplete addon"; exit 1; }
+          echo "all six libraries and the addon metadata are present"
+
+      - name: Archive
+        run: zip -r godot-cineform.zip godot-cineform
+
+      - name: Delete previous draft releases
+        uses: hugo19941994/delete-draft-releases@v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: godot-cineform nightly
+          body: |
+            CineForm exporter for Godot Movie Maker.
+
+            Set the Movie Maker output extension to `.cfhd`. The container is AVI. Remux to
+            Matroska with `ffmpeg -i out.cfhd -c copy out.mkv`, which is a stream copy.
+
+            **x86_64 only.** cineform-sdk has no NEON path, so there is no Apple Silicon,
+            Android or web build. On current Macs this loads under Rosetta or not at all.
+
+            Godot 4.2 or later.
+          files: godot-cineform.zip
+          tag_name: nightly
+          draft: false
+          prerelease: true
+          fail_on_unmatched_files: true

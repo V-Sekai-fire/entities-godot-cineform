@@ -1,0 +1,185 @@
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+#
+# THREE PLATFORMS, NOT NINE, AND THE REASON IS MEASURED.
+#
+# cineform-sdk includes <emmintrin.h> unconditionally at the top of Codec/codec.c,
+# Codec/convert.c and Codec/encoder.c, and 16 files use __m128. There is no NEON path and no
+# scalar fallback. `_XMMOPT` in Codec/config.h gates code paths but not the include, so any
+# non x86 target fails in the preprocessor before this project compiles a line.
+#
+#   windows x86_64   builds
+#   linux   x86_64   builds
+#   macos   x86_64   builds, Intel only, NOT universal and NOT Apple Silicon
+#   macos   arm64    blocked
+#   ios     arm64    blocked
+#   android arm64, arm32   blocked
+#   web     wasm32   blocked
+#
+# Adding a platform once the codec is ported is one line in the matrix below. Shipping six
+# jobs that fail at the preprocessor would be six failures nobody can tell apart, which is
+# the thing a laddered CI exists to avoid.
+#
+# Apple Silicon deserves naming rather than leaving in the table. Godot on macOS is arm64 by
+# default now, so an x86_64 only extension loads under Rosetta or not at all. That is a real
+# limitation of this addon on current Macs, not a gap in the workflow.
+
+name: build
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  gate:
+    # Everything that needs no compiler, first, because it costs seconds. A build that takes
+    # ten minutes to report a moved method hash is ten minutes spent learning nothing.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: python -m pip install numpy
+
+      - name: GDExtension symbols still agree across Godot 4.0 to 4.5
+        run: python gen_bindings.py --check
+
+      - name: Generated header is committed and current
+        run: |
+          python gen_bindings.py
+          git diff --exit-code -- src/gdextension_symbols.h
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: CineForm round trip, with its negative control
+        run: python verify_roundtrip.py
+
+  build:
+    needs: [gate]
+    strategy:
+      # One platform failing must not cancel the others, or a macOS toolchain problem hides
+      # whether Linux was fine.
+      fail-fast: false
+      matrix:
+        target:
+          - { platform: windows, arch: x86_64, os: windows-latest }
+          - { platform: linux, arch: x86_64, os: ubuntu-22.04 }
+          - { platform: macos, arch: x86_64, os: macos-13 }
+        build-type: [Release, Debug]
+    runs-on: ${{ matrix.target.os }}
+    name: ${{ matrix.target.platform }} ${{ matrix.target.arch }} ${{ matrix.build-type }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install repo
+        shell: bash
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/repo" https://storage.googleapis.com/git-repo-downloads/repo
+          chmod +x "$RUNNER_TEMP/repo"
+
+      - name: Fetch dependencies from this repository's own manifest
+        shell: bash
+        # default.xml is the single source of truth for which godot-cpp and which cineform-sdk
+        # this builds against. CI reads the same file a developer does, so the two cannot drift.
+        # repo refuses to init without an identity, and a runner has none.
+        run: |
+          git config --global user.email "ci@weftspun.invalid"
+          git config --global user.name "weftspun ci"
+          git config --global color.ui false
+          python "$RUNNER_TEMP/repo" init -u https://github.com/weftspun/godot-cineform -b main -m default.xml --depth=1
+          python "$RUNNER_TEMP/repo" sync -j4
+
+      - name: Record what was pinned
+        shell: bash
+        run: |
+          for d in thirdparty/godot-cpp thirdparty/cineform-sdk; do
+            echo "$d $(git -C "$d" rev-parse HEAD)"
+          done
+
+      - name: Install Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: matrix.target.platform == 'windows'
+        with:
+          arch: x64
+
+      - name: Configure
+        shell: bash
+        # CMAKE_POLICY_VERSION_MINIMUM because cineform-sdk asks for CMake 3.5.1 and CMake 4
+        # refuses below 3.10 without it. Patching a vendored dependency instead would turn
+        # every future update into a merge.
+        #
+        # macos-13 is the last Intel runner image. CMAKE_OSX_ARCHITECTURES pins x86_64 so the
+        # build cannot quietly become arm64 and then fail deep inside the codec.
+        run: |
+          EXTRA=""
+          if [ "${{ matrix.target.platform }}" = "macos" ]; then
+            EXTRA="-DCMAKE_OSX_ARCHITECTURES=x86_64"
+          fi
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 $EXTRA
+
+      - name: Build
+        shell: bash
+        run: cmake --build build --parallel
+
+      - name: The library exists under the name cineform.gdextension expects
+        shell: bash
+        # A file under the wrong name is reported by Godot as "extension not found", with no
+        # hint about which name it wanted. Measured: a release only build leaves the editor,
+        # which carries the debug feature tag, resolving a library that is not there, and it
+        # says nothing at all.
+        run: |
+          case "${{ matrix.build-type }}" in
+            Debug) VARIANT=template_debug ;;
+            *)     VARIANT=template_release ;;
+          esac
+          case "${{ matrix.target.platform }}" in
+            windows) EXT=dll ;;
+            macos)   EXT=dylib ;;
+            *)       EXT=so ;;
+          esac
+          WANT="demo/addons/cineform/bin/libgodot_cineform.${{ matrix.target.platform }}.$VARIANT.${{ matrix.target.arch }}.$EXT"
+          ls -l demo/addons/cineform/bin/ || true
+          test -f "$WANT" || { echo "missing $WANT"; exit 1; }
+          echo "ok $WANT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: godot-cineform-${{ matrix.target.platform }}-${{ matrix.target.arch }}-${{ matrix.build-type }}
+          path: |
+            demo/addons/cineform/**
+            !demo/addons/cineform/bin/*.pdb
+            !demo/addons/cineform/bin/*.ilk
+          if-no-files-found: error
+
+  merge:
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: always()
+    steps:
+      - name: Merge per platform artifacts into one addon
+        uses: actions/upload-artifact/merge@v4
+        with:
+          name: godot-cineform
+          pattern: godot-cineform-*
+          delete-merged: true
+
+  release:
+    name: Nightly release
+    permissions:
+      contents: write
+    needs: [merge]
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/release.yml

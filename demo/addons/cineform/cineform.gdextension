@@ -7,3 +7,5 @@ windows.debug.x86_64   = "res://addons/cineform/bin/libgodot_cineform.windows.te
 windows.release.x86_64 = "res://addons/cineform/bin/libgodot_cineform.windows.template_release.x86_64.dll"
 linux.debug.x86_64     = "res://addons/cineform/bin/libgodot_cineform.linux.template_debug.x86_64.so"
 linux.release.x86_64   = "res://addons/cineform/bin/libgodot_cineform.linux.template_release.x86_64.so"
+macos.debug.x86_64     = "res://addons/cineform/bin/libgodot_cineform.macos.template_debug.x86_64.dylib"
+macos.release.x86_64   = "res://addons/cineform/bin/libgodot_cineform.macos.template_release.x86_64.dylib"

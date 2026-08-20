@@ -138,6 +138,33 @@ from, which is what makes an update reviewable.
 The generated header is the authority, not `extension_api.json`. The two disagree about C++
 types, and that disagreement cost a build.
 
+## Platforms
+
+x86_64 only, and that is a property of the codec rather than a choice.
+
+cineform-sdk includes `<emmintrin.h>` unconditionally at the top of `Codec/codec.c`,
+`Codec/convert.c` and `Codec/encoder.c`. Sixteen files use `__m128`. There is no NEON path and
+no scalar fallback. `_XMMOPT` in `Codec/config.h` gates code paths but not the include, so a
+non x86 target fails in the preprocessor before this project compiles a line.
+
+| target | state |
+| --- | --- |
+| windows x86_64 | builds, and is the platform this was developed on |
+| linux x86_64 | builds |
+| macos x86_64 | builds, Intel only |
+| macos arm64 | blocked on the codec |
+| ios arm64 | blocked on the codec |
+| android arm64, arm32 | blocked on the codec |
+| web wasm32 | blocked on the codec |
+
+**Apple Silicon is the limitation worth naming.** Godot on macOS is arm64 by default now, so
+this addon loads under Rosetta or not at all on a current Mac. Porting means NEON paths for
+the sixteen files using `__m128`, or a scalar fallback behind the `_XMMOPT` switch that is
+already there.
+
+CMake refuses a non x86_64 target with that explanation, rather than letting the failure
+surface nine hundred files deep inside a vendored dependency.
+
 ## Known gaps
 
 **No audio.** `_get_audio_mix_rate` returns 0, so Godot allocates no audio blocks. A writer

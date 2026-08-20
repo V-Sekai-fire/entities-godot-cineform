@@ -59,8 +59,27 @@ target_link_libraries(godot_cineform PRIVATE godot-cpp CFHDCodecStatic)
 # as "extension not found" with no hint about which name was expected.
 if(WIN32)
   set(PLATFORM "windows")
+elseif(APPLE)
+  set(PLATFORM "macos")
 else()
   set(PLATFORM "linux")
+endif()
+
+# x86_64 ONLY, and this is a property of the codec rather than a choice.
+#
+# cineform-sdk includes <emmintrin.h> unconditionally at the top of Codec/codec.c,
+# Codec/convert.c and Codec/encoder.c, and 16 files use __m128. There is no NEON path and no
+# scalar fallback. `_XMMOPT` in Codec/config.h gates some code paths but not the include, so
+# a non x86 target fails in the preprocessor before any of this project compiles.
+#
+# Failing here, with this message, beats failing 900 files deep in a vendored dependency.
+if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
+  message(FATAL_ERROR
+    "cineform-sdk is x86_64 only. CMAKE_SYSTEM_PROCESSOR is ${CMAKE_SYSTEM_PROCESSOR}.
+"
+    "  Porting it needs NEON paths for the 16 files using __m128, or a scalar fallback
+"
+    "  behind the existing _XMMOPT switch. See README, 'Platforms'.")
 endif()
 string(TOLOWER "${CMAKE_BUILD_TYPE}" BUILD_LOWER)
 if(BUILD_LOWER STREQUAL "debug")
