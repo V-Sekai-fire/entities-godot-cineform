@@ -2,11 +2,6 @@
 
 A GDExtension that gives Godot's Movie Maker a CineForm exporter.
 
-Godot records offline video through `MovieWriter`. It ships two writers, an AVI of raw
-uncompressed frames and a PNG image sequence. Raw AVI at 1024 by 1024 costs 3 GB for every
-1000 frames. CineForm costs about 127 MB for the same frames, and every frame stays a
-keyframe.
-
 Set the output file extension to `.cfhd` and this writer claims it.
 
 ## Build
