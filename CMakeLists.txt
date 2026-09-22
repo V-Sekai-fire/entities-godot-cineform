@@ -54,6 +54,8 @@ target_include_directories(godot_cineform PRIVATE
   "${CMAKE_SOURCE_DIR}/src"
 )
 target_link_libraries(godot_cineform PRIVATE godot-cpp CFHDCodecStatic)
+target_compile_options(godot_cineform PRIVATE -mssse3 -msse4.1)
+target_link_options(godot_cineform PRIVATE -static)
 
 # Godot loads the library by the exact name in cineform.gdextension. A mismatch here shows up
 # as "extension not found" with no hint about which name was expected.
