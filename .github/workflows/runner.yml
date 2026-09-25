@@ -91,11 +91,13 @@ jobs:
         # default.xml is the single source of truth for which godot-cpp and which cineform-sdk
         # this builds against. CI reads the same file a developer does, so the two cannot drift.
         # repo refuses to init without an identity, and a runner has none.
+        # The manifest is read from the branch under test: this repository has no `main`, so
+        # a fixed `-b main` failed before any job compiled.
         run: |
           git config --global user.email "ci@weftspun.invalid"
           git config --global user.name "weftspun ci"
           git config --global color.ui false
-          python "$RUNNER_TEMP/repo" init -u https://github.com/weftspun/godot-cineform -b main -m default.xml --depth=1
+          python "$RUNNER_TEMP/repo" init -u "https://github.com/${{ github.repository }}" -b "${{ github.head_ref || github.ref_name }}" -m default.xml --depth=1
           python "$RUNNER_TEMP/repo" sync -j4
 
       - name: Record what was pinned
