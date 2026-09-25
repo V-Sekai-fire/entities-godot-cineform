@@ -55,14 +55,14 @@ target_include_directories(godot_cineform PRIVATE
 )
 target_link_libraries(godot_cineform PRIVATE godot-cpp CFHDCodecStatic)
 target_compile_options(godot_cineform PRIVATE -mssse3 -msse4.1)
-if(WIN32)
-  target_link_options(godot_cineform PRIVATE -static)
-else()
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   # A shared object cannot take a static libc, so on Linux only the C++ runtime is linked
   # statically. The SDK's encoder calls uuid_generate; libuuid.so.1 ships with util-linux
   # on every desktop distribution, and Debian's libuuid.a is not PIC.
   target_link_options(godot_cineform PRIVATE -static-libstdc++ -static-libgcc)
   target_link_libraries(godot_cineform PRIVATE uuid pthread)
+else()
+  target_link_options(godot_cineform PRIVATE -static)
 endif()
 
 # Godot loads the library by the exact name in cineform.gdextension. A mismatch here shows up
