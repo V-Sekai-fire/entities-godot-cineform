@@ -7,7 +7,7 @@
 # scalar fallback. `_XMMOPT` in Codec/config.h gates code paths but not the include, so any
 # non x86 target fails in the preprocessor before this project compiles a line.
 #
-#   windows x86_64   builds
+#   windows x86_64   builds (llvm-mingw clang, not MSVC)
 #   linux   x86_64   builds
 #   macos   x86_64   builds, Intel only, NOT universal and NOT Apple Silicon
 #   macos   arm64    blocked
@@ -69,7 +69,7 @@ jobs:
         target:
           - { platform: windows, arch: x86_64, os: windows-latest }
           - { platform: linux, arch: x86_64, os: ubuntu-22.04 }
-          - { platform: macos, arch: x86_64, os: macos-13 }
+          - { platform: macos, arch: x86_64, os: macos-latest }
         build-type: [Release, Debug]
     runs-on: ${{ matrix.target.os }}
     name: ${{ matrix.target.platform }} ${{ matrix.target.arch }} ${{ matrix.build-type }}
@@ -91,11 +91,13 @@ jobs:
         # default.xml is the single source of truth for which godot-cpp and which cineform-sdk
         # this builds against. CI reads the same file a developer does, so the two cannot drift.
         # repo refuses to init without an identity, and a runner has none.
+        # The manifest is read from the branch under test: this repository has no `main`, so
+        # a fixed `-b main` failed before any job compiled.
         run: |
           git config --global user.email "ci@weftspun.invalid"
           git config --global user.name "weftspun ci"
           git config --global color.ui false
-          python "$RUNNER_TEMP/repo" init -u https://github.com/weftspun/godot-cineform -b main -m default.xml --depth=1
+          python "$RUNNER_TEMP/repo" init -u "https://github.com/${{ github.repository }}" -b "${{ github.head_ref || github.ref_name }}" -m default.xml --depth=1
           python "$RUNNER_TEMP/repo" sync -j4
 
       - name: Record what was pinned
@@ -108,10 +110,19 @@ jobs:
       - name: Install Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
 
-      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Install llvm-mingw (Windows)
         if: matrix.target.platform == 'windows'
-        with:
-          arch: x64
+        shell: bash
+        # cl.exe cannot build the LLVM-fixed cineform-sdk: Codec/simd_compat.h includes
+        # mm_malloc.h, which MSVC does not ship. The shipped DLL is built with llvm-mingw's
+        # clang, which links its C++ runtime statically under -static, so CI builds with the
+        # same toolchain. Pinned, so the compiler cannot change under a green build.
+        run: |
+          LLVM_MINGW=llvm-mingw-20260922-ucrt-x86_64
+          curl -fsSL -o "$RUNNER_TEMP/llvm-mingw.zip" \
+            "https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/$LLVM_MINGW.zip"
+          7z x -y -o"$RUNNER_TEMP" "$RUNNER_TEMP/llvm-mingw.zip" > /dev/null
+          echo "$RUNNER_TEMP/$LLVM_MINGW/bin" >> "$GITHUB_PATH"
 
       - name: Configure
         shell: bash
@@ -126,9 +137,17 @@ jobs:
           if [ "${{ matrix.target.platform }}" = "macos" ]; then
             EXTRA="-DCMAKE_OSX_ARCHITECTURES=x86_64"
           fi
+          C_FLAGS=""
+          if [ "${{ matrix.target.platform }}" = "windows" ]; then
+            EXTRA="-DCMAKE_C_COMPILER=x86_64-w64-mingw32-clang -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-clang++"
+            # clang 23 makes this an error. The SDK passes int32_t* where Win32 wants LONG*,
+            # both 32 bits on Windows.
+            C_FLAGS="-Wno-error=incompatible-pointer-types"
+          fi
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 $EXTRA
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            "-DCMAKE_C_FLAGS=$C_FLAGS" $EXTRA
 
       - name: Build
         shell: bash
