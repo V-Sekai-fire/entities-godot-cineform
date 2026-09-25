@@ -69,7 +69,7 @@ jobs:
         target:
           - { platform: windows, arch: x86_64, os: windows-latest }
           - { platform: linux, arch: x86_64, os: ubuntu-22.04 }
-          - { platform: macos, arch: x86_64, os: macos-13 }
+          - { platform: macos, arch: x86_64, os: macos-latest }
         build-type: [Release, Debug]
     runs-on: ${{ matrix.target.os }}
     name: ${{ matrix.target.platform }} ${{ matrix.target.arch }} ${{ matrix.build-type }}
