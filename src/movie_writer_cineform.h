@@ -34,6 +34,7 @@ class MovieWriterCineForm : public MovieWriter {
 	uint32_t frame_index = 0;
 	uint32_t frames_written = 0;
 	uint32_t queued = 0;
+	static constexpr uint32_t job_queue_length = 8;
 	Vector2i size;
 	uint32_t frame_rate = 0;
 	int thread_count = 0;
@@ -112,6 +113,7 @@ class MovieWriterCineForm : public MovieWriter {
 	long frames_field_at = 0;
 	long stream_len_at = 0;
 
+	bool collect(bool block);
 	void drain(bool block);
 	void write_sample(const void *data, size_t len);
 	void write_audio(const int32_t *samples);
