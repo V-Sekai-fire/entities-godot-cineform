@@ -211,7 +211,7 @@ Error MovieWriterCineForm::_write_begin(const Vector2i &p_movie_size, uint32_t p
 	}
 	audio_channels = 2; // matches _get_audio_speaker_mode returning SPEAKER_MODE_STEREO
 
-	CFHD_Error err = CFHD_CreateEncoderPool(&pool, threads, 8, nullptr);
+	CFHD_Error err = CFHD_CreateEncoderPool(&pool, threads, int(job_queue_length), nullptr);
 	if (err != CFHD_ERROR_OKAY) {
 		UtilityFunctions::printerr("CFHD_CreateEncoderPool failed, code ", int(err));
 		return ERR_CANT_CREATE;
@@ -284,6 +284,20 @@ Error MovieWriterCineForm::_write_begin(const Vector2i &p_movie_size, uint32_t p
 Error MovieWriterCineForm::_write_frame(const Ref<Image> &p_image, const void *p_audio_data) {
 	if (!pool || !avi || p_image.is_null()) {
 		return ERR_UNCONFIGURED;
+	}
+
+	// A submit to a full job queue waits for a collect, and only this thread collects.
+	if (queued >= job_queue_length) {
+		const std::chrono::steady_clock::time_point t_wait = std::chrono::steady_clock::now();
+		const bool collected = collect(true);
+		drain_us += std::chrono::duration<double, std::micro>(
+				std::chrono::steady_clock::now() - t_wait).count();
+		if (!collected) {
+			UtilityFunctions::printerr(
+					"CineForm: the job queue is full and the encoder returned no sample, frame ",
+					frame_index);
+			return ERR_CANT_CREATE;
+		}
 	}
 
 	const auto t_convert = std::chrono::steady_clock::now();
@@ -411,24 +425,28 @@ Error MovieWriterCineForm::_write_frame(const Ref<Image> &p_image, const void *p
 	return OK;
 }
 
+bool MovieWriterCineForm::collect(bool block) {
+	uint32_t number = 0;
+	CFHD_SampleBufferRef buffer = nullptr;
+	CFHD_Error err = block ? CFHD_WaitForSample(pool, &number, &buffer)
+						   : CFHD_TestForSample(pool, &number, &buffer);
+	if (err != CFHD_ERROR_OKAY || buffer == nullptr) {
+		return false;
+	}
+	void *data = nullptr;
+	size_t len = 0;
+	if (CFHD_GetEncodedSample(buffer, &data, &len) == CFHD_ERROR_OKAY && data && len) {
+		write_sample(data, len);
+	}
+	CFHD_ReleaseSampleBuffer(pool, buffer);
+	// The encoder is done with this frame, so the data it read from can go.
+	inflight.erase(number);
+	queued--;
+	return true;
+}
+
 void MovieWriterCineForm::drain(bool block) {
-	while (queued > 0) {
-		uint32_t number = 0;
-		CFHD_SampleBufferRef buffer = nullptr;
-		CFHD_Error err = block ? CFHD_WaitForSample(pool, &number, &buffer)
-							   : CFHD_TestForSample(pool, &number, &buffer);
-		if (err != CFHD_ERROR_OKAY || buffer == nullptr) {
-			break;
-		}
-		void *data = nullptr;
-		size_t len = 0;
-		if (CFHD_GetEncodedSample(buffer, &data, &len) == CFHD_ERROR_OKAY && data && len) {
-			write_sample(data, len);
-		}
-		CFHD_ReleaseSampleBuffer(pool, buffer);
-		// The encoder is done with this frame, so the data it read from can go.
-		inflight.erase(number);
-		queued--;
+	while (queued > 0 && collect(block)) {
 	}
 }
 
