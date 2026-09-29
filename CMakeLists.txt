@@ -97,9 +97,15 @@ if(BUILD_LOWER STREQUAL "debug")
 else()
   set(VARIANT "template_release")
 endif()
+# A double-precision engine loads only the entries tagged `double`; a single-precision
+# library in it crashes at load, because the builtin sizes differ.
+set(PRECISION_TAG "")
+if(GODOT_PRECISION STREQUAL "double")
+  set(PRECISION_TAG ".double")
+endif()
 set_target_properties(godot_cineform PROPERTIES
   PREFIX "lib"
-  OUTPUT_NAME "godot_cineform.${PLATFORM}.${VARIANT}.x86_64"
+  OUTPUT_NAME "godot_cineform.${PLATFORM}.${VARIANT}${PRECISION_TAG}.x86_64"
   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/demo/addons/cineform/bin"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/demo/addons/cineform/bin"
 )
