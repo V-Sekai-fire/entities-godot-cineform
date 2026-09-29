@@ -10,6 +10,9 @@ Set the output file extension to `.cfhd` and this writer claims it.
     cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     cmake --build build --parallel
 
+For an engine built with `precision=double`, add `-DGODOT_PRECISION=double`. The library
+name then carries `.double`, which is the entry such an engine loads.
+
 ## Use
 
 From a script, the writer exposes three settings.
