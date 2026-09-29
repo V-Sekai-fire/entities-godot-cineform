@@ -80,8 +80,11 @@ class MovieWriterCineForm : public MovieWriter {
 
 	// Godot hands us RGBA8 top down. CineForm's BGRA input wants the rows the other way and
 	// the channels swapped, so this is where that happens. Doing it in place on Godot's
-	// buffer would mutate a frame the engine still owns.
-	std::vector<uint8_t> staging;
+	// buffer would mutate a frame the engine still owns. The encoder reads a queued frame
+	// after _write_frame returns, so each one keeps its own buffer until its sample comes back.
+	std::map<uint32_t, std::vector<uint8_t>> staged;
+	std::vector<std::vector<uint8_t>> spare_staging;
+	size_t staging_bytes = 0;
 
 	// Audio. Godot hands one block of int32 samples with every frame, sized
 	// mix_rate * channels / fps, and it refuses to start if mix_rate is not divisible by fps.
