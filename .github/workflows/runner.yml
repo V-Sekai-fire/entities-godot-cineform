@@ -29,7 +29,7 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    branches: [main]
+    branches: [main/llvm-clang23-build]
 
 jobs:
   gate:
@@ -69,7 +69,9 @@ jobs:
         target:
           - { platform: windows, arch: x86_64, os: windows-latest }
           - { platform: linux, arch: x86_64, os: ubuntu-22.04 }
-          - { platform: macos, arch: x86_64, os: macos-latest }
+          # macos-latest and the retired macos-13 label both provision arm64 images now, and the
+          # x86_64 check above then fails in the preprocessor. macos-15-intel is the last Intel image.
+          - { platform: macos, arch: x86_64, os: macos-15-intel }
         build-type: [Release, Debug]
     runs-on: ${{ matrix.target.os }}
     name: ${{ matrix.target.platform }} ${{ matrix.target.arch }} ${{ matrix.build-type }}
@@ -130,7 +132,7 @@ jobs:
         # refuses below 3.10 without it. Patching a vendored dependency instead would turn
         # every future update into a merge.
         #
-        # macos-13 is the last Intel runner image. CMAKE_OSX_ARCHITECTURES pins x86_64 so the
+        # macos-15-intel is the last Intel runner image. CMAKE_OSX_ARCHITECTURES pins x86_64 so the
         # build cannot quietly become arm64 and then fail deep inside the codec.
         run: |
           EXTRA=""
@@ -200,5 +202,5 @@ jobs:
     permissions:
       contents: write
     needs: [merge]
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main/llvm-clang23-build'
     uses: ./.github/workflows/release.yml
