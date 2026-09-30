@@ -69,9 +69,11 @@ jobs:
         target:
           - { platform: windows, arch: x86_64, os: windows-latest }
           - { platform: linux, arch: x86_64, os: ubuntu-22.04 }
-          # macos-latest and the retired macos-13 label both provision arm64 images now, and the
-          # x86_64 check above then fails in the preprocessor. macos-15-intel is the last Intel image.
-          - { platform: macos, arch: x86_64, os: macos-15-intel }
+          # No macOS job. macos-latest and the retired macos-13 label provision arm64 images, which
+          # this codec cannot build for, and on macos-15-intel (the last Intel image) Apple clang
+          # rejects godot-cpp's generated utility_functions.hpp ("ambiguous conversion for
+          # functional-style cast"). Nobody consumes a macOS build of this addon; the row returns
+          # with a fix for that header.
         build-type: [Release, Debug]
     runs-on: ${{ matrix.target.os }}
     name: ${{ matrix.target.platform }} ${{ matrix.target.arch }} ${{ matrix.build-type }}
