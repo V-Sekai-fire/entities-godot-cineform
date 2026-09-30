@@ -35,12 +35,16 @@ jobs:
             bin/libgodot_cineform.windows.template_debug.x86_64.dll \
             bin/libgodot_cineform.linux.template_release.x86_64.so \
             bin/libgodot_cineform.linux.template_debug.x86_64.so \
+            bin/libgodot_cineform.windows.template_release.double.x86_64.dll \
+            bin/libgodot_cineform.windows.template_debug.double.x86_64.dll \
+            bin/libgodot_cineform.linux.template_release.double.x86_64.so \
+            bin/libgodot_cineform.linux.template_debug.double.x86_64.so \
             cineform.gdextension plugin.cfg LICENSE-APACHE LICENSE-MIT
           do
             if [ ! -f "$f" ]; then echo "MISSING $f"; missing=1; fi
           done
           [ "$missing" = "0" ] || { echo "refusing to publish an incomplete addon"; exit 1; }
-          echo "all four libraries and the addon metadata are present"
+          echo "all eight libraries and the addon metadata are present"
 
       - name: Archive
         run: zip -r godot-cineform.zip godot-cineform

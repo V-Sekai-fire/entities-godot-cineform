@@ -75,8 +75,13 @@ jobs:
           # functional-style cast"). Nobody consumes a macOS build of this addon; the row returns
           # with a fix for that header.
         build-type: [Release, Debug]
+        # double is for engines built with precision=double; no macOS engine of that kind is used.
+        precision: [single, double]
+        exclude:
+          - target: { platform: macos, arch: x86_64, os: macos-latest }
+            precision: double
     runs-on: ${{ matrix.target.os }}
-    name: ${{ matrix.target.platform }} ${{ matrix.target.arch }} ${{ matrix.build-type }}
+    name: ${{ matrix.target.platform }} ${{ matrix.target.arch }} ${{ matrix.build-type }} ${{ matrix.precision }}
     steps:
       - uses: actions/checkout@v4
 
@@ -151,6 +156,7 @@ jobs:
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DGODOT_PRECISION=${{ matrix.precision }} \
             "-DCMAKE_C_FLAGS=$C_FLAGS" $EXTRA
 
       - name: Build
@@ -173,14 +179,16 @@ jobs:
             macos)   EXT=dylib ;;
             *)       EXT=so ;;
           esac
-          WANT="demo/addons/cineform/bin/libgodot_cineform.${{ matrix.target.platform }}.$VARIANT.${{ matrix.target.arch }}.$EXT"
+          PRECISION=""
+          if [ "${{ matrix.precision }}" = "double" ]; then PRECISION=".double"; fi
+          WANT="demo/addons/cineform/bin/libgodot_cineform.${{ matrix.target.platform }}.$VARIANT$PRECISION.${{ matrix.target.arch }}.$EXT"
           ls -l demo/addons/cineform/bin/ || true
           test -f "$WANT" || { echo "missing $WANT"; exit 1; }
           echo "ok $WANT"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: godot-cineform-${{ matrix.target.platform }}-${{ matrix.target.arch }}-${{ matrix.build-type }}
+          name: godot-cineform-${{ matrix.target.platform }}-${{ matrix.target.arch }}-${{ matrix.build-type }}-${{ matrix.precision }}
           path: |
             demo/addons/cineform/**
             !demo/addons/cineform/bin/*.pdb
