@@ -211,7 +211,7 @@ Error MovieWriterCineForm::_write_begin(const Vector2i &p_movie_size, uint32_t p
 	}
 	audio_channels = 2; // matches _get_audio_speaker_mode returning SPEAKER_MODE_STEREO
 
-	CFHD_Error err = CFHD_CreateEncoderPool(&pool, threads, 8, nullptr);
+	CFHD_Error err = CFHD_CreateEncoderPool(&pool, threads, int(job_queue_length), nullptr);
 	if (err != CFHD_ERROR_OKAY) {
 		UtilityFunctions::printerr("CFHD_CreateEncoderPool failed, code ", int(err));
 		return ERR_CANT_CREATE;
@@ -276,7 +276,7 @@ Error MovieWriterCineForm::_write_begin(const Vector2i &p_movie_size, uint32_t p
 	if (!avi) {
 		return ERR_FILE_CANT_WRITE;
 	}
-	staging.resize(size_t(size.x) * size_t(size.y) * size_t(bytes_per_pixel));
+	staging_bytes = size_t(size.x) * size_t(size.y) * size_t(bytes_per_pixel);
 	audio_staging.resize(size_t(mix_rate / (frame_rate ? frame_rate : 30)) * size_t(audio_channels));
 	return OK;
 }
@@ -284,6 +284,20 @@ Error MovieWriterCineForm::_write_begin(const Vector2i &p_movie_size, uint32_t p
 Error MovieWriterCineForm::_write_frame(const Ref<Image> &p_image, const void *p_audio_data) {
 	if (!pool || !avi || p_image.is_null()) {
 		return ERR_UNCONFIGURED;
+	}
+
+	// A submit to a full job queue waits for a collect, and only this thread collects.
+	if (queued >= job_queue_length) {
+		const std::chrono::steady_clock::time_point t_wait = std::chrono::steady_clock::now();
+		const bool collected = collect(true);
+		drain_us += std::chrono::duration<double, std::micro>(
+				std::chrono::steady_clock::now() - t_wait).count();
+		if (!collected) {
+			UtilityFunctions::printerr(
+					"CineForm: the job queue is full and the encoder returned no sample, frame ",
+					frame_index);
+			return ERR_CANT_CREATE;
+		}
 	}
 
 	const auto t_convert = std::chrono::steady_clock::now();
@@ -310,6 +324,17 @@ Error MovieWriterCineForm::_write_frame(const Ref<Image> &p_image, const void *p
 		return ERR_INVALID_DATA;
 	}
 
+	uint8_t *out = nullptr;
+	if (!(zero_copy && !hdr)) {
+		std::vector<uint8_t> &frame = staged[frame_index];
+		if (!spare_staging.empty()) {
+			frame.swap(spare_staging.back());
+			spare_staging.pop_back();
+		}
+		frame.resize(staging_bytes);
+		out = frame.data();
+	}
+
 	// Rows are flipped in both paths. AVI stores bottom up, and the pool API does not
 	// document a negative pitch, so the flip happens here rather than by passing one.
 	const uint8_t *in = src.ptr();
@@ -321,7 +346,7 @@ Error MovieWriterCineForm::_write_frame(const Ref<Image> &p_image, const void *p
 		// wrapped. A wrap turns a highlight into a black hole and looks like a codec bug.
 		for (int y = 0; y < h; y++) {
 			const float *s16 = reinterpret_cast<const float *>(in + src_pitch * size_t(h - 1 - y));
-			uint16_t *d = reinterpret_cast<uint16_t *>(staging.data() + pitch * size_t(y));
+			uint16_t *d = reinterpret_cast<uint16_t *>(out + pitch * size_t(y));
 			for (int x = 0; x < w; x++) {
 				for (int c = 0; c < 4; c++) {
 					float v = s16[c] * 65535.0f;
@@ -354,7 +379,7 @@ Error MovieWriterCineForm::_write_frame(const Ref<Image> &p_image, const void *p
 		const int wide = (w * 4) & ~15;
 		for (int y = 0; y < h; y++) {
 			const uint8_t *s8 = in + src_pitch * size_t(flip_in_codec ? y : (h - 1 - y));
-			uint8_t *d = staging.data() + pitch * size_t(y);
+			uint8_t *d = out + pitch * size_t(y);
 			int b = 0;
 			for (; b < wide; b += 16) {
 				const __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i *>(s8 + b));
@@ -376,7 +401,7 @@ Error MovieWriterCineForm::_write_frame(const Ref<Image> &p_image, const void *p
 
 	// Zero copy hands the encoder Godot's own bytes. `src` is a COW handle onto the image
 	// data, so keeping it in `inflight` keeps the memory alive until the sample comes back.
-	const void *buffer = staging.data();
+	const void *buffer = out;
 	intptr_t buffer_pitch = intptr_t(pitch);
 	if (zero_copy && !hdr) {
 		inflight[frame_index] = src;
@@ -389,6 +414,7 @@ Error MovieWriterCineForm::_write_frame(const Ref<Image> &p_image, const void *p
 	if (err != CFHD_ERROR_OKAY) {
 		UtilityFunctions::printerr("CFHD_EncodeAsyncSample failed on frame ", frame_index,
 				", code ", int(err));
+		staged.erase(frame_index);
 		return ERR_CANT_CREATE;
 	}
 	frame_index++;
@@ -411,24 +437,33 @@ Error MovieWriterCineForm::_write_frame(const Ref<Image> &p_image, const void *p
 	return OK;
 }
 
+bool MovieWriterCineForm::collect(bool block) {
+	uint32_t number = 0;
+	CFHD_SampleBufferRef buffer = nullptr;
+	CFHD_Error err = block ? CFHD_WaitForSample(pool, &number, &buffer)
+						   : CFHD_TestForSample(pool, &number, &buffer);
+	if (err != CFHD_ERROR_OKAY || buffer == nullptr) {
+		return false;
+	}
+	void *data = nullptr;
+	size_t len = 0;
+	if (CFHD_GetEncodedSample(buffer, &data, &len) == CFHD_ERROR_OKAY && data && len) {
+		write_sample(data, len);
+	}
+	CFHD_ReleaseSampleBuffer(pool, buffer);
+	// The encoder is done with this frame, so the data it read from can go.
+	inflight.erase(number);
+	std::map<uint32_t, std::vector<uint8_t>>::iterator done = staged.find(number);
+	if (done != staged.end()) {
+		spare_staging.push_back(std::move(done->second));
+		staged.erase(done);
+	}
+	queued--;
+	return true;
+}
+
 void MovieWriterCineForm::drain(bool block) {
-	while (queued > 0) {
-		uint32_t number = 0;
-		CFHD_SampleBufferRef buffer = nullptr;
-		CFHD_Error err = block ? CFHD_WaitForSample(pool, &number, &buffer)
-							   : CFHD_TestForSample(pool, &number, &buffer);
-		if (err != CFHD_ERROR_OKAY || buffer == nullptr) {
-			break;
-		}
-		void *data = nullptr;
-		size_t len = 0;
-		if (CFHD_GetEncodedSample(buffer, &data, &len) == CFHD_ERROR_OKAY && data && len) {
-			write_sample(data, len);
-		}
-		CFHD_ReleaseSampleBuffer(pool, buffer);
-		// The encoder is done with this frame, so the data it read from can go.
-		inflight.erase(number);
-		queued--;
+	while (queued > 0 && collect(block)) {
 	}
 }
 
@@ -441,8 +476,8 @@ void MovieWriterCineForm::_write_end() {
 	}
 	finish_avi();
 	inflight.clear();
-	staging.clear();
-	staging.shrink_to_fit();
+	staged.clear();
+	spare_staging.clear();
 	UtilityFunctions::print("CineForm: wrote ", frames_written, " frames of ", frame_index,
 			" submitted");
 	if (frame_index) {

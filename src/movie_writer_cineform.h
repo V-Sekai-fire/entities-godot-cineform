@@ -34,6 +34,7 @@ class MovieWriterCineForm : public MovieWriter {
 	uint32_t frame_index = 0;
 	uint32_t frames_written = 0;
 	uint32_t queued = 0;
+	static constexpr uint32_t job_queue_length = 8;
 	Vector2i size;
 	uint32_t frame_rate = 0;
 	int thread_count = 0;
@@ -79,8 +80,11 @@ class MovieWriterCineForm : public MovieWriter {
 
 	// Godot hands us RGBA8 top down. CineForm's BGRA input wants the rows the other way and
 	// the channels swapped, so this is where that happens. Doing it in place on Godot's
-	// buffer would mutate a frame the engine still owns.
-	std::vector<uint8_t> staging;
+	// buffer would mutate a frame the engine still owns. The encoder reads a queued frame
+	// after _write_frame returns, so each one keeps its own buffer until its sample comes back.
+	std::map<uint32_t, std::vector<uint8_t>> staged;
+	std::vector<std::vector<uint8_t>> spare_staging;
+	size_t staging_bytes = 0;
 
 	// Audio. Godot hands one block of int32 samples with every frame, sized
 	// mix_rate * channels / fps, and it refuses to start if mix_rate is not divisible by fps.
@@ -112,6 +116,7 @@ class MovieWriterCineForm : public MovieWriter {
 	long frames_field_at = 0;
 	long stream_len_at = 0;
 
+	bool collect(bool block);
 	void drain(bool block);
 	void write_sample(const void *data, size_t len);
 	void write_audio(const int32_t *samples);
