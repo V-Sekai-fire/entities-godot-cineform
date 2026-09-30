@@ -35,14 +35,12 @@ jobs:
             bin/libgodot_cineform.windows.template_debug.x86_64.dll \
             bin/libgodot_cineform.linux.template_release.x86_64.so \
             bin/libgodot_cineform.linux.template_debug.x86_64.so \
-            bin/libgodot_cineform.macos.template_release.x86_64.dylib \
-            bin/libgodot_cineform.macos.template_debug.x86_64.dylib \
             cineform.gdextension plugin.cfg LICENSE-APACHE LICENSE-MIT
           do
             if [ ! -f "$f" ]; then echo "MISSING $f"; missing=1; fi
           done
           [ "$missing" = "0" ] || { echo "refusing to publish an incomplete addon"; exit 1; }
-          echo "all six libraries and the addon metadata are present"
+          echo "all four libraries and the addon metadata are present"
 
       - name: Archive
         run: zip -r godot-cineform.zip godot-cineform
@@ -61,8 +59,9 @@ jobs:
             Set the Movie Maker output extension to `.cfhd`. The container is AVI. Remux to
             Matroska with `ffmpeg -i out.cfhd -c copy out.mkv`, which is a stream copy.
 
-            **x86_64 only.** cineform-sdk has no NEON path, so there is no Apple Silicon,
-            Android or web build. On current Macs this loads under Rosetta or not at all.
+            **x86_64 Windows and Linux only.** cineform-sdk has no NEON path, so there is no Apple
+            Silicon, Android or web build, and the Intel macOS build is off until Apple clang and
+            godot-cpp's generated headers agree.
 
             Godot 4.2 or later.
           files: godot-cineform.zip
