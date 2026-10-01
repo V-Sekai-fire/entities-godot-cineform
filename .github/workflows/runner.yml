@@ -110,14 +110,15 @@ jobs:
             echo "$d $(git -C "$d" rev-parse HEAD)"
           done
 
-      # The action downloads an x86_64 binary, so the arm64 runner takes Ubuntu's own package.
+      # The action downloads an x86_64 binary, so the arm64 runner takes Ubuntu's own packages,
+      # with libuuid's headers, which that image lacks and the encoder includes.
       - name: Install Ninja
         if: matrix.target.arch != 'arm64'
         uses: seanmiddleditch/gha-setup-ninja@v5
 
       - name: Install Ninja (arm64)
         if: matrix.target.arch == 'arm64'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build uuid-dev
 
       - name: Install llvm-mingw (Windows)
         if: matrix.target.platform == 'windows'
