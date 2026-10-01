@@ -44,6 +44,11 @@ set(BUILD_SEPARATED OFF CACHE BOOL "" FORCE)
 add_subdirectory("${GODOT_CPP_DIR}" godot-cpp EXCLUDE_FROM_ALL)
 add_subdirectory("${CINEFORM_DIR}" cineform-sdk EXCLUDE_FROM_ALL)
 
+# clang 21 makes these errors by default; on Windows the SDK passes int32_t* where Win32 wants
+# LONG* (ReleaseSemaphore in Codec/decoder.c). interactor-av1mkv builds the SDK with the same two.
+target_compile_options(CFHDCodecStatic PRIVATE
+  $<$<COMPILE_LANGUAGE:C>:-Wno-incompatible-pointer-types -Wno-incompatible-function-pointer-types>)
+
 add_library(godot_cineform SHARED
   src/movie_writer_cineform.cpp
   src/register_types.cpp
