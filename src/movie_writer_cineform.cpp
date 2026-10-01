@@ -6,7 +6,11 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
+#if defined(__aarch64__) || defined(_M_ARM64)
+#include "simd_compat.h" // the SDK's sse2neon: _mm_shuffle_epi8 and the rest on NEON
+#else
 #include <tmmintrin.h>   // SSSE3, for _mm_shuffle_epi8
+#endif
 
 #include <chrono>
 #include <cstring>

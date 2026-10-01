@@ -2,6 +2,11 @@
 cmake_minimum_required(VERSION 3.22)
 project(godot_cineform CXX C)
 
+# The arm64 slice runs on nothing older than Big Sur; without this CMake stamps the build host's SDK.
+if(APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version" FORCE)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -59,14 +64,19 @@ target_include_directories(godot_cineform PRIVATE
   "${CMAKE_SOURCE_DIR}/src"
 )
 target_link_libraries(godot_cineform PRIVATE godot-cpp CFHDCodecStatic)
-target_compile_options(godot_cineform PRIVATE -mssse3 -msse4.1)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|ARM64")
+  # Codec/simd_compat.h maps the SSE and MMX intrinsics to NEON for the writer too.
+  target_include_directories(godot_cineform PRIVATE "${CINEFORM_DIR}/Codec")
+else()
+  target_compile_options(godot_cineform PRIVATE -mssse3 -msse4.1)
+endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   # A shared object cannot take a static libc, so on Linux only the C++ runtime is linked
   # statically. The SDK's encoder calls uuid_generate; libuuid.so.1 ships with util-linux
   # on every desktop distribution, and Debian's libuuid.a is not PIC.
   target_link_options(godot_cineform PRIVATE -static-libstdc++ -static-libgcc)
   target_link_libraries(godot_cineform PRIVATE uuid pthread)
-else()
+elseif(WIN32)
   target_link_options(godot_cineform PRIVATE -static)
 endif()
 
@@ -80,21 +90,16 @@ else()
   set(PLATFORM "linux")
 endif()
 
-# x86_64 ONLY, and this is a property of the codec rather than a choice.
-#
-# cineform-sdk includes <emmintrin.h> unconditionally at the top of Codec/codec.c,
-# Codec/convert.c and Codec/encoder.c, and 16 files use __m128. There is no NEON path and no
-# scalar fallback. `_XMMOPT` in Codec/config.h gates some code paths but not the include, so
-# a non x86 target fails in the preprocessor before any of this project compiles.
-#
-# Failing here, with this message, beats failing 900 files deep in a vendored dependency.
-if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
+# x86_64 and arm64. cineform-sdk's Codec/simd_compat.h maps its SSE and MMX intrinsics to
+# NEON through sse2neon and mmx2neon, so a third architecture means a mapping there.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
+  set(ARCH "x86_64")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|ARM64")
+  set(ARCH "arm64")
+else()
   message(FATAL_ERROR
-    "cineform-sdk is x86_64 only. CMAKE_SYSTEM_PROCESSOR is ${CMAKE_SYSTEM_PROCESSOR}.
-"
-    "  Porting it needs NEON paths for the 16 files using __m128, or a scalar fallback
-"
-    "  behind the existing _XMMOPT switch. See README, 'Platforms'.")
+    "godot-cineform builds for x86_64 and arm64, not ${CMAKE_SYSTEM_PROCESSOR}: "
+    "cineform-sdk's Codec/simd_compat.h maps SSE to NEON and nothing else.")
 endif()
 string(TOLOWER "${CMAKE_BUILD_TYPE}" BUILD_LOWER)
 if(BUILD_LOWER STREQUAL "debug")
@@ -104,7 +109,7 @@ else()
 endif()
 set_target_properties(godot_cineform PROPERTIES
   PREFIX "lib"
-  OUTPUT_NAME "godot_cineform.${PLATFORM}.${VARIANT}.x86_64"
+  OUTPUT_NAME "godot_cineform.${PLATFORM}.${VARIANT}.${ARCH}"
   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/demo/addons/cineform/bin"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/demo/addons/cineform/bin"
 )
