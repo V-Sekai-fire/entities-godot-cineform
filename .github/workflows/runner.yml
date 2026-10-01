@@ -1,16 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0 OR MIT
 #
-# THREE PLATFORMS, NOT NINE, AND THE REASON IS MEASURED.
+# THE PLATFORMS THAT BUILD, AND WHY THE REST DO NOT.
 #
-# cineform-sdk includes <emmintrin.h> unconditionally at the top of Codec/codec.c,
-# Codec/convert.c and Codec/encoder.c, and 16 files use __m128. There is no NEON path and no
-# scalar fallback. `_XMMOPT` in Codec/config.h gates code paths but not the include, so any
-# non x86 target fails in the preprocessor before this project compiles a line.
+# cineform-sdk's Codec/simd_compat.h maps its SSE and MMX intrinsics to NEON (sse2neon and
+# mmx2neon), so arm64 builds wherever the toolchain does. Other architectures have no mapping.
 #
 #   windows x86_64   builds (llvm-mingw clang, not MSVC)
 #   linux   x86_64   builds
-#   macos   x86_64   builds, Intel only, NOT universal and NOT Apple Silicon
-#   macos   arm64    blocked
+#   linux   arm64    builds, the NEON path
+#   macos   x86_64, arm64   blocked: Apple clang rejects godot-cpp's utility_functions.hpp
 #   ios     arm64    blocked
 #   android arm64, arm32   blocked
 #   web     wasm32   blocked
@@ -69,6 +67,7 @@ jobs:
         target:
           - { platform: windows, arch: x86_64, os: windows-latest }
           - { platform: linux, arch: x86_64, os: ubuntu-22.04 }
+          - { platform: linux, arch: arm64, os: ubuntu-24.04-arm }
           # No macOS job. macos-latest and the retired macos-13 label provision arm64 images, which
           # this codec cannot build for, and on macos-15-intel (the last Intel image) Apple clang
           # rejects godot-cpp's generated utility_functions.hpp ("ambiguous conversion for
@@ -111,8 +110,15 @@ jobs:
             echo "$d $(git -C "$d" rev-parse HEAD)"
           done
 
+      # The action downloads an x86_64 binary, so the arm64 runner takes Ubuntu's own packages,
+      # with libuuid's headers, which that image lacks and the encoder includes.
       - name: Install Ninja
+        if: matrix.target.arch != 'arm64'
         uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Install Ninja (arm64)
+        if: matrix.target.arch == 'arm64'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build uuid-dev
 
       - name: Install llvm-mingw (Windows)
         if: matrix.target.platform == 'windows'
