@@ -324,7 +324,7 @@ Error MovieWriterCineForm::_write_frame(const Ref<Image> &p_image, const void *p
 	const size_t pitch = size_t(w) * size_t(bytes_per_pixel);
 	if (size_t(src.size()) < src_pitch * size_t(h)) {
 		UtilityFunctions::printerr("frame is ", src.size(), " bytes, expected ",
-				src_pitch * h);
+				int64_t(src_pitch * h));
 		return ERR_INVALID_DATA;
 	}
 
