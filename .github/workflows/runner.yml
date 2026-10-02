@@ -29,6 +29,10 @@ on:
   push:
     branches: [main/llvm-clang23-build]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   gate:
     # Everything that needs no compiler, first, because it costs seconds. A build that takes
