@@ -1,23 +1,26 @@
-# godot-cineform
+# entities-godot-cineform
 
-A GDExtension that gives Godot's Movie Maker a CineForm exporter.
+A GDExtension that gives the engine's movie recording a CineForm writer, claimed by the `.cfhd` extension.
 
-Set the output file extension to `.cfhd` and this writer claims it.
+## What it is for
+
+It lets a Godot project record its frames straight to a wavelet intermediate codec whose licence
+matches the workspace's own, so nothing LGPL enters an export. RFD 1123 owns the design, and
+`demo/` is a project that loads the addon.
 
 ## Build
 
-    repo sync                      # or clone the two thirdparty repos by hand
-    cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-    cmake --build build --parallel
+The two dependencies come from this repository's own `default.xml`:
 
-For an engine built with `precision=double`, add `-DGODOT_PRECISION=double`. The library
-name then carries `.double`, which is the entry such an engine loads.
+```sh
+repo init -u https://github.com/V-Sekai-fire/entities-godot-cineform -m default.xml
+repo sync
+cmake -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+cmake --build build
+```
 
-## Use
+The policy minimum is there because the pinned codec SDK asks for an older CMake.
 
-From a script, the writer exposes three settings.
+## Licence
 
-    var w := MovieWriterCineForm.new()
-    w.set_quality(2)        # 0 low .. 5 filmscan3, default 2 which is HIGH
-    w.set_thread_count(0)   # 0 lets the encoder pool choose
-    w.set_keep_alpha(false) # true encodes RGBA_4444 instead of RGB_444
+Apache-2.0 OR MIT; see `LICENSE-APACHE` and `LICENSE-MIT`.
