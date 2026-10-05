@@ -8,7 +8,8 @@
 #   windows x86_64   builds (llvm-mingw clang, not MSVC)
 #   linux   x86_64   builds
 #   linux   arm64    builds, the NEON path
-#   macos   x86_64, arm64   blocked: Apple clang rejects godot-cpp's utility_functions.hpp
+#   macos   arm64    builds, the NEON path
+#   macos   x86_64   not built: current Macs and Godot's macOS default are arm64
 #   ios     arm64    blocked
 #   android arm64, arm32   blocked
 #   web     wasm32   blocked
@@ -16,10 +17,6 @@
 # Adding a platform once the codec is ported is one line in the matrix below. Shipping six
 # jobs that fail at the preprocessor would be six failures nobody can tell apart, which is
 # the thing a laddered CI exists to avoid.
-#
-# Apple Silicon deserves naming rather than leaving in the table. Godot on macOS is arm64 by
-# default now, so an x86_64 only extension loads under Rosetta or not at all. That is a real
-# limitation of this addon on current Macs, not a gap in the workflow.
 
 name: build
 
@@ -72,11 +69,7 @@ jobs:
           - { platform: windows, arch: x86_64, os: windows-latest }
           - { platform: linux, arch: x86_64, os: ubuntu-22.04 }
           - { platform: linux, arch: arm64, os: ubuntu-24.04-arm }
-          # No macOS job. macos-latest and the retired macos-13 label provision arm64 images, which
-          # this codec cannot build for, and on macos-15-intel (the last Intel image) Apple clang
-          # rejects godot-cpp's generated utility_functions.hpp ("ambiguous conversion for
-          # functional-style cast"). Nobody consumes a macOS build of this addon; the row returns
-          # with a fix for that header.
+          - { platform: macos, arch: arm64, os: macos-14 }
         build-type: [Release, Debug]
         # double is for engines built with precision=double.
         precision: [single, double]
@@ -146,12 +139,10 @@ jobs:
         # refuses below 3.10 without it. Patching a vendored dependency instead would turn
         # every future update into a merge.
         #
-        # macos-15-intel is the last Intel runner image. CMAKE_OSX_ARCHITECTURES pins x86_64 so the
-        # build cannot quietly become arm64 and then fail deep inside the codec.
         run: |
           EXTRA=""
           if [ "${{ matrix.target.platform }}" = "macos" ]; then
-            EXTRA="-DCMAKE_OSX_ARCHITECTURES=x86_64"
+            EXTRA="-DCMAKE_OSX_ARCHITECTURES=arm64"
           fi
           C_FLAGS=""
           if [ "${{ matrix.target.platform }}" = "windows" ]; then

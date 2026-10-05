@@ -19,3 +19,5 @@ linux.debug.double.x86_64     = "res://addons/cineform/bin/libgodot_cineform.lin
 linux.release.double.x86_64   = "res://addons/cineform/bin/libgodot_cineform.linux.template_release.double.x86_64.so"
 linux.debug.double.arm64      = "res://addons/cineform/bin/libgodot_cineform.linux.template_debug.double.arm64.so"
 linux.release.double.arm64    = "res://addons/cineform/bin/libgodot_cineform.linux.template_release.double.arm64.so"
+macos.debug.double.arm64      = "res://addons/cineform/bin/libgodot_cineform.macos.template_debug.double.arm64.dylib"
+macos.release.double.arm64    = "res://addons/cineform/bin/libgodot_cineform.macos.template_release.double.arm64.dylib"
