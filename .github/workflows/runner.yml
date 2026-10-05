@@ -24,7 +24,7 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    branches: [main/llvm-clang23-build]
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
